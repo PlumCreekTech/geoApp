@@ -15,10 +15,12 @@
     <TextView
         android:id="@+id/fenceenter"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_below="@id/fenceadd" />
     <TextView
         android:id="@+id/fenceexit"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_below="@id/fenceenter" />
 
 </RelativeLayout>

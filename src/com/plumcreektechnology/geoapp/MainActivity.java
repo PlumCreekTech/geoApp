@@ -356,9 +356,7 @@ public class MainActivity extends FragmentActivity implements
 					Log.e("ReceiveIS", "Geofence transition error: " + Integer.toString(transitionType));
 				}
 			}
-			
 		}
-		
 	}
 
 	private PendingIntent getTransitionPI() {
