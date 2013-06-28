@@ -2,7 +2,6 @@ package com.plumcreektechnology.geoapp;
 
 import java.util.ArrayList;
 import java.util.List;
-
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesClient.ConnectionCallbacks;
 import com.google.android.gms.common.GooglePlayServicesClient.OnConnectionFailedListener;
@@ -12,12 +11,15 @@ import com.google.android.gms.location.LocationClient;
 import com.google.android.gms.location.LocationStatusCodes;
 import com.google.android.gms.location.LocationClient.OnAddGeofencesResultListener;
 import com.google.android.gms.location.LocationRequest;
-
+import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.IntentService;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -25,8 +27,11 @@ import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.support.v4.app.FragmentActivity;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationCompat.Builder;
 import android.util.Log;
 import android.view.Menu;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -34,14 +39,18 @@ import android.widget.Toast;
 public class MainActivity extends FragmentActivity implements 
 		ConnectionCallbacks,
 		OnConnectionFailedListener,
-		OnAddGeofencesResultListener {
+		OnAddGeofencesResultListener,
+		com.google.android.gms.location.LocationListener {
 
+	private Location currentLoc;
 	private LocationClient locClient;
 	private LocationRequest locRequest;
     public enum REQUEST_TYPE {ADD};
     private REQUEST_TYPE request;
     private boolean inProgress;
 	private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+	private static final long UPDATE_INTERVAL_MS = 5000;
+	private static final long FASTEST_INTERVAL_MS = 2000;
 	
     List<Geofence> geoList;
     private SimpleGeofenceStore geoStore;
@@ -60,6 +69,13 @@ public class MainActivity extends FragmentActivity implements
 		geoStore = new SimpleGeofenceStore(this);
 		geoList = new ArrayList<Geofence>();
 		createGeofences();
+		
+		// do all of the right things to make a location request for repeated
+		// updates
+		locRequest = LocationRequest.create();
+		locRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+		locRequest.setInterval(UPDATE_INTERVAL_MS);
+		locRequest.setFastestInterval(FASTEST_INTERVAL_MS);
 	}
 
 	public void onStart() {
@@ -84,13 +100,13 @@ public class MainActivity extends FragmentActivity implements
 		
 		// instantiate simpleGeofences
 		SimpleGeofence geo1 = new SimpleGeofence("Giraffe", 41.294886, -82.216749,
-				100, 180000, Geofence.GEOFENCE_TRANSITION_ENTER);
+				1000, Geofence.NEVER_EXPIRE, Geofence.GEOFENCE_TRANSITION_ENTER);
 		SimpleGeofence geo2 = new SimpleGeofence("Neighbor", 41.294607, -82.216889,
-				100, 180000, Geofence.GEOFENCE_TRANSITION_ENTER);
+				1000, Geofence.NEVER_EXPIRE, Geofence.GEOFENCE_TRANSITION_ENTER);
 		SimpleGeofence geo3 = new SimpleGeofence("Church", 41.294393, -82.215591,
-				100, 180000, Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT);
+				1000, Geofence.NEVER_EXPIRE, Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT);
 		SimpleGeofence geo4 = new SimpleGeofence("Regina", 41.294714, -82.212654,
-				100, 180000, Geofence.GEOFENCE_TRANSITION_ENTER);
+				1000, Geofence.NEVER_EXPIRE, Geofence.GEOFENCE_TRANSITION_ENTER);
 		
 		// store them all to shared preferences
 		geoStore.setGeofence("Giraffe", geo1);
@@ -112,6 +128,27 @@ public class MainActivity extends FragmentActivity implements
 		return true;
 	}
 
+	/**
+	 * handles OnConnectionFailed error calls from LocationUpdateRemover 
+	 * & LocationUpdateRequester because they call startResolutionForResult()
+	 * and it calls onActivityResult() which comes here
+	 */
+	public void onActivityResult(int request, int result, Intent data) {
+		switch (request) {
+		case CONNECTION_FAILURE_RESOLUTION_REQUEST:
+			switch (result) {
+			case Activity.RESULT_OK:
+				// TODO display positive result to user with a textview object
+
+				break;
+			default:
+				// TODO display negative result
+				break;
+			}
+			break;
+		}
+	}
+	
 	/**
 	 * checks whether the device is connected to Google Play Services and
 	 * displays an error message if not
@@ -140,7 +177,7 @@ public class MainActivity extends FragmentActivity implements
 		if(dialog != null){
 			ErrorDialogFragment errorFrag = new ErrorDialogFragment();
 			errorFrag.setDialog(dialog);
-			errorFrag.show(getFragmentManager(), "Location Updates");
+			errorFrag.show(getFragmentManager(), "Geofence ");
 		}
 	}
 	
@@ -330,6 +367,7 @@ public class MainActivity extends FragmentActivity implements
 
 		@Override
 		protected void onHandleIntent(Intent intent) {
+			Toast.makeText(this, "entered onHandleIntent", Toast.LENGTH_SHORT);
 			if(LocationClient.hasError(intent)) {
 				int errorCode = LocationClient.getErrorCode(intent);
 				Log.e("ReceiveIS", "Location Services error: "+ Integer.toString(errorCode));
@@ -342,16 +380,28 @@ public class MainActivity extends FragmentActivity implements
 					for(int i=0; i<enterList.size(); i++) {
 						enterIds = enterIds + " " + enterList.get(i).getRequestId();
 					}
-					TextView enter = (TextView) findViewById(R.id.fenceenter);
-					enter.setText(enterIds);
+//					Toast.makeText(this, enterIds, Toast.LENGTH_LONG).show();
+					// send notification about entering geofence
+					NotificationCompat.Builder notebuilder = new NotificationCompat.Builder(
+							this).setSmallIcon(R.drawable.ic_launcher)
+							.setContentTitle("Entered Geofence!")
+							.setContentText("You have entered " + enterIds);
+					NotificationManager noteMan = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+					noteMan.notify(23, notebuilder.build());
+					
 				} else if (transitionType==Geofence.GEOFENCE_TRANSITION_EXIT) {
 					List<Geofence> exitList = LocationClient.getTriggeringGeofences(intent);
 					String exitIds = "";
 					for(int i=0; i<exitList.size(); i++) {
 						exitIds = exitIds + " " + exitList.get(i).getRequestId();
 					}
-					TextView exit = (TextView) findViewById(R.id.fenceexit);
-					exit.setText(exitIds);
+//					Toast.makeText(this, exitIds, Toast.LENGTH_LONG).show();
+					NotificationCompat.Builder notebuilder = new NotificationCompat.Builder(
+							this).setSmallIcon(R.drawable.ic_launcher)
+							.setContentTitle("Exited Geofence!")
+							.setContentText("You have exited " + exitIds);
+					NotificationManager noteMan = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+					noteMan.notify(17, notebuilder.build());
 				} else { // an invalid transition was reported
 					Log.e("ReceiveIS", "Geofence transition error: " + Integer.toString(transitionType));
 				}
@@ -399,12 +449,21 @@ public class MainActivity extends FragmentActivity implements
 	@Override
 	public void onConnected(Bundle bundle) {
 		// Display connection status
-		Toast.makeText(this, "Connected! Go you!", Toast.LENGTH_SHORT).show();
-
+		//Toast.makeText(this, "Connected! Go you!", Toast.LENGTH_SHORT).show();
+		
+		/**currentLoc = locClient.getLastLocation();
+		String message = "First Location: "
+				+ Double.toString(currentLoc.getLatitude()) + ","
+				+ Double.toString(currentLoc.getLongitude());
+		Toast.makeText(this, message, Toast.LENGTH_LONG).show();**/
+		locClient.requestLocationUpdates(locRequest, this);
+		
+		TextView fencepost = (TextView) findViewById(R.id.fenceenter);
+		fencepost.setText(geoList.toString());
+		
 		switch (request) {
-			case ADD: PendingIntent pending = getTransitionPI();
-				locClient.addGeofences( geoList, pending, this);
-				break;
+		case ADD:
+			locClient.addGeofences(geoList, getTransitionPI(), this);
 		}
 	}
 
@@ -413,5 +472,14 @@ public class MainActivity extends FragmentActivity implements
 		// Display sad connection status
 		Toast.makeText(this, "Disconnected. Don't beat yourself up about it.", Toast.LENGTH_SHORT).show();
 		inProgress = false;
+	}
+
+	@Override
+	public void onLocationChanged(Location location) {
+		currentLoc = location;
+		String message = "Updated Location: "
+				+ Double.toString(currentLoc.getLatitude()) + ","
+				+ Double.toString(currentLoc.getLongitude());
+		Toast.makeText(this, message, Toast.LENGTH_LONG).show();
 	}
 }
